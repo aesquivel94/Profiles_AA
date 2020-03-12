@@ -81,7 +81,7 @@ calc_p95CMP <- cmpfun(calc_p95)
 # Index Functions. 
 # ------------------------------------------------------------------------------------- #
 
-fls  <- list.files(paste0(root,'/data/Chirps_Chirts'), pattern = '*.fst$', full.names = T)
+# fls  <- list.files(paste0(root,'/data/Chirps_Chirts'), pattern = '*.fst$', full.names = T)
 
 # Id - country
 id_country <- read_csv('//dapadfs/workspace_cluster_8/climateriskprofiles/data/id_country.csv') 
@@ -92,42 +92,16 @@ id_country_f <- id_country %>%
 # Years
 all_years <- 1985:2015
 
-
-all_country <- id_country_f %>% 
+# Toy trabajando aqui...
+all_country <- id_country_f %>%
   nest(-ISO3, -Country ) %>% 
-  filter(row_number() == 3) %>% 
-  dplyr::select(data) %>% 
-  unnest()
+  mutate(semester = c(1, 1, 2)) # %>% 
+  # filter(row_number() == 3) %>% 
+  # dplyr::select(data) %>% 
+  # unnest()
 
 # Temporalmente olvidar la temporada. 
 # Para un solo ID
-
-id <- all_country %>% filter(id == 95) %>% pull(id)
-
-
-# Aqui se agrupa por year...
-id_year <- tibble(id =  id, year = all_years) %>% 
-  filter(year == 1985)
-
-
-
-id_year 
-
-
-# Aqui la funcion year - id 
-year = 1985
-id = 95
-semester = 1
-
-
-# Si solo se tiene un semestre...
-
-
-
-
-#  Funcion interna para correr los semestres
-
-
 
 # =----------------------------------------------------------
 # function to run each semester. 
@@ -205,11 +179,97 @@ reading_run_pys <- function( pixel_inf, climate_path){
 return(data_base)}
 
 # =----------------------------------------------------------
+run_pixelY <- function(ISO3,  data, climate_path){
+  
+  id <- data$id; x <- data$x ; y <- data$y ; semester <- data$semester
+  
+  # Aqui se agrupa por year...
+  # tictoc::tic() 
+  run_years_ps <- tibble(semester = semester, id =  id, year = 1985:2015)  %>% 
+    mutate(count = 1:nrow(.)) %>% 
+    nest(-count) %>% 
+    mutate(index = purrr::map(.x = data,  .f = reading_run_pys, climate_path = climate_path))
+  # tictoc::toc()  # 25.51
+  
+  data_index <- run_years_ps %>% 
+    dplyr::select(-data) %>% mutate(ISO3 = ISO3) %>% 
+    unnest(index) %>% 
+    inner_join(data) %>% 
+    dplyr::select(ISO3, id, x, y, semester, year, CDD, P5D , P95, NT35,  sum.ind)
+  
+  
+  sum.ind <- data_index %>% 
+    dplyr::select(ISO3, id,x,y,semester, year, sum.ind) %>%
+    unnest() %>% # filter(row_number() == 1) %>% dplyr::select(sum.ind) %>% unnest()
+    mutate(rows = purrr::map(.x = sum.ind, .f = length)) %>% 
+    unnest(rows) 
+  
+  
+  Acum <- sum.ind %>% filter(rows == 1) %>% unnest( sum.ind) %>% dplyr::select(-rows)
+  fst::write_fst(x = Acum , glue::glue('//dapadfs/workspace_cluster_8/climateriskprofiles/data/metadata/periodos/acum/Acum_{ISO3}_{id}.fst'))
+  
+  sum.ind %>% 
+    filter(rows > 1) %>% 
+    dplyr::select(-rows) %>%
+    mutate(file = glue::glue('//dapadfs/workspace_cluster_8/climateriskprofiles/data/metadata/periodos/{ISO3}/{ISO3}_{id}_{year}_{semester}') ) %>% 
+    unnest(sum.ind) %>% 
+    nest(-file) %>% 
+    mutate(save = purrr::map2(.x = data, .y = file, .f = fst::write_fst))
+  
+  return(data_index)}
+
+# id <- all_country %>% filter(id == 95) %>% pull(id)
+# data_country <- all_country %>% filter(row_number() == 3) %>% dplyr::select(data) %>% unnest() %>% 
+#   dplyr::filter(id == 95)
+
+# =------------------ Funcion para correr todos los pixel de un pais...
+# Necesito tener un objeto que se llame ISO3
 
 
-# pixel_inf <- tibble(id = 95, year = 1986,  semester = 2)
-reading_run_pys(pixel_inf = tibble(id = 95, year = 1986,  semester = 1), climate_path =  climate_path)
-
-#
 
 
+
+
+
+# mod <- all_country  %>% 
+#   mutate(data_mod = purrr::map(.x = data, .f = function(x){filter(x, row_number() < 3)})) %>% 
+#   dplyr::select(ISO3, Country, semester, data_mod)
+
+# ISO3 <- 'MLI'
+# country_folder <- glue::glue('//dapadfs/workspace_cluster_8/climateriskprofiles/data/metadata/periodos/{ISO3}/')
+# ISO3
+# if(dir.exists(country_folder) == FALSE){dir.create(country_folder)}else{cowsay::say('ok', 'smallcat')}
+
+
+
+tictoc::tic()
+plan(multiprocess)
+options(future.globals.maxSize= 891289600)
+# tictoc::tic()
+all_pixles <-  all_country %>%
+  # filter(row_number() == 1) %>%
+  # dplyr::select(ISO3, data) %>%
+  unnest() %>%
+  mutate(rows = 1:nrow(.)) %>%
+  nest(- ISO3, -Country, -rows) %>%
+  # mutate(run_by_id = purrr::map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))# mutate(run_by_id = purrr::map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))
+  mutate(run_by_id = furrr::future_map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))
+gc()
+gc(reset = T)
+tictoc::toc() # 6.57
+
+
+
+# probando <- all_country %>%
+#   # filter(row_number() == 1) %>%
+#   # dplyr::select(ISO3, data) %>%
+#   unnest() %>%
+#   mutate(rows = 1:nrow(.)) %>%
+#   nest(- ISO3, -Country, -rows) %>% 
+#   filter(row_number()==1)
+
+
+# probando$data[[1]]
+# probando$ISO3
+# 
+# run_pixelY(ISO3 = probando$ISO3, data = probando$data[[1]], climate_path = climate_path)
