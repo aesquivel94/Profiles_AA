@@ -90,15 +90,15 @@ id_country_f <- id_country %>%
   filter(Country %in% c('Pakistan', 'Mali','Ethiopia'))
 
 # Years
-all_years <- 1985:2015
+# all_years <- 1985:2015
 
 # Toy trabajando aqui...
 all_country <- id_country_f %>%
   nest(-ISO3, -Country ) %>% 
   mutate(semester = c(1, 1, 2)) # %>% 
-  # filter(row_number() == 3) %>% 
-  # dplyr::select(data) %>% 
-  # unnest()
+# filter(row_number() == 3) %>% 
+# dplyr::select(data) %>% 
+# unnest()
 
 # Temporalmente olvidar la temporada. 
 # Para un solo ID
@@ -138,7 +138,6 @@ reading_run_pys <- function( pixel_inf, climate_path){
   if(semester == 2){
     # Si se tienen 2 se tiene un semestres...
     # semester = 2
-    
     data_s <- tibble(date = list.files(path = climate_path, pattern = as.character(year)) %>% str_remove('D_') %>% str_remove('.fst') %>%  lubridate::as_date(Date), 
                      files = list.files(path = climate_path, pattern = as.character(year), full.names = TRUE)) %>% 
       mutate(year = lubridate::year(date), month = lubridate::month(date), 
@@ -175,8 +174,8 @@ reading_run_pys <- function( pixel_inf, climate_path){
     data_base <- run_each_semester(one = one, semester =  1)
     
   }else{ data_base <- NULL}
-    
-return(data_base)}
+  
+  return(data_base)}
 
 # =----------------------------------------------------------
 run_pixelY <- function(ISO3,  data, climate_path){
@@ -216,6 +215,11 @@ run_pixelY <- function(ISO3,  data, climate_path){
     nest(-file) %>% 
     mutate(save = purrr::map2(.x = data, .y = file, .f = fst::write_fst))
   
+  
+  index <- data_index %>% 
+    dplyr::select(ISO3, id, x, y, semester, year, CDD, P5D , P95, NT35)
+  fst::write_fst(x = index , glue::glue('//dapadfs/workspace_cluster_8/climateriskprofiles/data/metadata/periodos/Index_climate/I_{ISO3}_{id}.fst'))
+  
   return(data_index)}
 
 # id <- all_country %>% filter(id == 95) %>% pull(id)
@@ -224,11 +228,6 @@ run_pixelY <- function(ISO3,  data, climate_path){
 
 # =------------------ Funcion para correr todos los pixel de un pais...
 # Necesito tener un objeto que se llame ISO3
-
-
-
-
-
 
 
 # mod <- all_country  %>% 
@@ -242,21 +241,22 @@ run_pixelY <- function(ISO3,  data, climate_path){
 
 
 
-tictoc::tic()
-plan(multiprocess)
-options(future.globals.maxSize= 891289600)
+
 # tictoc::tic()
-all_pixles <-  all_country %>%
-  # filter(row_number() == 1) %>%
-  # dplyr::select(ISO3, data) %>%
-  unnest() %>%
-  mutate(rows = 1:nrow(.)) %>%
-  nest(- ISO3, -Country, -rows) %>%
-  # mutate(run_by_id = purrr::map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))# mutate(run_by_id = purrr::map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))
-  mutate(run_by_id = furrr::future_map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))
-gc()
-gc(reset = T)
-tictoc::toc() # 6.57
+# plan(multiprocess)
+# options(future.globals.maxSize= 891289600)
+# # tictoc::tic()
+# all_pixles <-  all_country %>%
+#   # filter(row_number() == 1) %>%
+#   # dplyr::select(ISO3, data) %>%
+#   unnest() %>%
+#   mutate(rows = 1:nrow(.)) %>%
+#   nest(- ISO3, -Country, -rows) %>%
+#   # mutate(run_by_id = purrr::map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))# mutate(run_by_id = purrr::map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))
+#   mutate(run_by_id = furrr::future_map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))
+# gc()
+# gc(reset = T)
+# tictoc::toc() # 6.57
 
 
 
@@ -273,3 +273,19 @@ tictoc::toc() # 6.57
 # probando$ISO3
 # 
 # run_pixelY(ISO3 = probando$ISO3, data = probando$data[[1]], climate_path = climate_path)
+
+
+
+
+# no_cores <- availableCores() - 1
+plan(cluster, workers = 30)
+
+all_pixles <-  all_country %>%
+  # filter(row_number() == 1) %>%
+  # dplyr::select(ISO3, data) %>%
+  unnest() %>%
+  mutate(rows = 1:nrow(.)) %>%
+  nest(- ISO3, -Country, -rows) %>%
+  # mutate(run_by_id = purrr::map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))# mutate(run_by_id = purrr::map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))
+  mutate(run_by_id = furrr::future_map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))
+
