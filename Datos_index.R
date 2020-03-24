@@ -47,10 +47,24 @@ datos_cli_cs <- '//dapadfs.cgiarad.org/workspace_cluster_8/climateriskprofiles/d
 # =----------------------------------
 # Identificacion de pixel para ETH
 # =----------------------------------
-
-
 country <- 'Ethiopia'
 county  <- 'Arsi'
+time <-  'past' # Historic - Future. 
+country1 <- 'ethiopia'
+
+
+# =----------------------------------
+# Do folders. 
+# =----------------------------------
+save_folders <- '//dapadfs/workspace_cluster_8/climateriskprofiles/results/'
+
+# if(dir.exists(output) == FALSE){
+#   dir.create(output)
+# }else{cat('Ok')}
+
+# =----------------------------------
+
+
 
 # Load county shapefile
 shp <- raster::shapefile(paste0(root,'/shps/Ethiopia/ETH_adm2.shp'))
@@ -105,14 +119,11 @@ by_list_nasa <- function(list_n){
   
   return(x)}
 
-
-
 # =- 
-  
-  crd %>% nest(-ISO3, -Country, -county, -id) %>% rename(coords = data) %>%
-    filter(!(id %in% id_run)) %>% #filter(row_number() <= 195) %>%
-    mutate(group =  c(rep(1:2, each = 90), rep(3, 15))) %>%
-    group_split(group) %>% purrr::map(.f = by_list_nasa)
+  # crd %>% nest(-ISO3, -Country, -county, -id) %>% rename(coords = data) %>%
+  #   filter(!(id %in% id_run)) %>% #filter(row_number() <= 195) %>%
+  #   mutate(group =  c(rep(1:2, each = 90), rep(3, 15))) %>%
+  #   group_split(group) %>% purrr::map(.f = by_list_nasa)
 
   
 
@@ -217,6 +228,14 @@ run_each_semester <- function(one, semester){
 
 
 
+# =----------------------------------------------------------
+# Funciones para suelos... hay que tener en cuenta que... primero se debe correr 
+# el balance hidrico... (creo...)
+
+
+
+
+
 
 
 # =----------------------------------------------------------------------------
@@ -228,17 +247,34 @@ observacional_data <- read_rds('//dapadfs/workspace_cluster_8/climateriskprofile
 tictoc::toc()
 
 
+# Soil <- fst::read_fst(paste0('//dapadfs/workspace_cluster_8/climateriskprofiles/data/soil_data.fst'))
+Soil1 <- fst::read.fst('//dapadfs/workspace_cluster_8/climateriskprofiles/data/soilcp_data.fst') %>% 
+  as_tibble() %>% 
+  dplyr::select(id, soilcp) %>% 
+  filter(id %in%  pull(crd, id))
+
+# =-
 observacional_data <- observacional_data %>% 
-  mutate(county = county, semester = 1) 
+  mutate(county = county, semester = 1) %>%
+  mutate(id = as.integer(id))
 
 
+observacional_data <- inner_join(observacional_data, Soil1) %>%
+  # filter(is.na(soilcp)) %>% 
+  mutate(soilcp = ifelse(is.na(soilcp), 100, soilcp))
+
+
+# px <- observacional_data %>%
+#   dplyr::group_split(id) %>%
+#   .[[1]]
+
+# reading_run_pys(px)
 # Run... Lo correre como una lista... creo que asi sera mas facil...
   
 # reading_run_pys(pixel_inf = px, climate_path = root)
 reading_run_pys <- function( px){
   
-  id <- px$id ; semester <- px$semester ; ISO3 <- px$ISO3 ; county <- px$county
-  
+  id <- px$id ; semester <- px$semester ; ISO3 <- px$ISO3 ; county <- px$county; soilcp <- px$soilcp
   
   if(semester == 2){
     # Si se tienen 2 se tiene un semestres...
@@ -265,43 +301,42 @@ reading_run_pys <- function( px){
 
   }else{ data_base <- NULL}
   
-  data_base
-  
-  
-  
   return(data_base)}
 
 
-# px <- observacional_data %>%
-#   dplyr::group_split(id) %>%
-#   .[[1]]
-
-# 
-# reading_run_pys(px)
-
-
+# Aqui vamos a correr los indices que tengan solo clima normal...
 
 tictoc::tic()
 plan(multiprocess)
 options(future.globals.maxSize= 891289600)
 tictoc::tic()
 
-# index_by_pixel <- 
-observacional_data %>% filter(row_number() < 11) %>%
+index_by_pixel <- observacional_data %>% # filter(row_number() < 20) %>%
   dplyr::group_split(id) %>%
-  furrr::future_map(.f = reading_run_pys)
+  furrr::future_map(.f = reading_run_pys) %>% 
+  bind_rows()
 
-
-
-
-
-  # mutate(run_by_id = furrr::future_map2(.x = ISO3, .y = data, .f = run_pixelY, climate_path = climate_path))
 gc()
 gc(reset = T)
-tictoc::toc() # 6.57
+tictoc::toc() # 8 min. 
+
+
+
+# data_with_C_index <- observacional_data %>%inner_join(. , index_by_pixel)
+
+# data_with_C_index <- dplyr::select(index_by_pixel,-climate)
+
+output_P <- glue::glue('{save_folders}/{country}/{time}/')
+readr::write_rds(x = index_by_pixel, path = glue::glue('{output_P}{county}_1985_2015.RDS'))  
+
+
+
+
+# Mapas presente -----
 
 
 
 
 
 
+# \\dapadfs.cgiarad.org\workspace_cluster_8\climateriskprofiles\data\bc_quantile_0_05deg_lat_county\ethiopia\ipsl_cm5a_mr\2021_2045
